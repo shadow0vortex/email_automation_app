@@ -3,10 +3,12 @@ Email Editor Widget - Rich text HTML editor
 Preview Dialog - Email preview window
 """
 
+import datetime
+from datetime import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTextEdit, QToolBar, QAction, QColorDialog, QDialog,
-    QLabel, QScrollArea
+    QLabel, QTableWidgetItem, QMessageBox
 )
 from PyQt5.QtGui import QFont, QColor, QTextCharFormat, QTextCursor
 from PyQt5.QtCore import Qt

@@ -6,7 +6,8 @@ Handles Excel/CSV file parsing with data validation
 import pandas as pd
 import re
 import logging
-
+from core.validators import EmailValidator
+import openpyxl 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -185,6 +186,34 @@ class ExcelProcessor:
         except Exception as e:
             logger.error(f"Error exporting report: {e}")
             return False
+        
+    def load_recipients(self, file_path):
+        """
+        Loads and validates recipients from an Excel or CSV file.
+        Returns a list of dictionaries: [{ 'Name': ..., 'Email': ... }]
+        """
+        # Use an ExcelProcessor instance to read and validate the file
+        processor = ExcelProcessor()
+        success, msg = processor.read_file(file_path)
+        if not success:
+            raise Exception(msg)
+
+        is_valid, results = processor.validate_data()
+        if not is_valid:
+            raise Exception("Invalid or missing email column")
+
+        valid_df = processor.get_valid_recipients()
+        if valid_df is None or valid_df.empty:
+            raise Exception("No valid recipients found")
+
+        recipients = []
+        for _, row in valid_df.iterrows():
+            recipients.append({
+                "Name": row.get("Name", ""),
+                "Email": row.get("Email", "")
+            })
+
+        return recipients
 
 
 class DataCleaner:
@@ -238,6 +267,9 @@ class DataCleaner:
             cleaned_df['Phone'] = cleaned_df['Phone'].apply(DataCleaner.clean_phone)
         
         return cleaned_df
+    
+
+
 
 
 if __name__ == "__main__":

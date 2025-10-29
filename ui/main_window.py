@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import openpyxl 
 import logging
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QTabWidget, QFileDialog, QMessageBox, QAction,
@@ -24,10 +25,12 @@ from core.database_manager import DatabaseManager
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, db_manager=None):
         super().__init__()
         self.setWindowTitle("Bulk Email Automation System")
+        self.db = db_manager if db_manager else DatabaseManager()
         self.setGeometry(100, 100, 1200, 800)
+        
 
         self.db = DatabaseManager()
         self.excel_processor = ExcelProcessor()
@@ -221,7 +224,7 @@ class MainWindow(QMainWindow):
     def open_smtp_settings(self):
         dialog = SettingsDialog(self)
         if dialog.exec_() == QDialog.Accepted:
-            config = dialog.get_settings()
+            config = dialog.load_settings()
             self.db.save_config_value("smtp_settings", config)
             QMessageBox.information(self, "Saved", "SMTP Settings updated successfully!")
 
@@ -359,6 +362,21 @@ class MainWindow(QMainWindow):
         self.refresh_logs_shortcut.triggered.connect(self.load_saved_settings)
         self.addAction(self.refresh_logs_shortcut)
 
+    def save_config_value(self, key, value):
+        """Wrapper to save a configuration key-value pair"""
+        try:
+            self.db.save_config_value(key, value)
+            logging.info(f"Saved config: {key}")
+        except Exception as e:
+            logging.error(f"Error saving config value: {e}")
+
+    def get_config_value(self, key, default=None):
+        """Wrapper to get configuration value"""
+        try:
+            return self.db.get_config_value(key, default)
+        except Exception as e:
+            logging.error(f"Error getting config value: {e}")
+            return default
 
 # ------------------------------ MAIN ENTRY POINT ------------------------------ #
 if __name__ == "__main__":
@@ -366,3 +384,4 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
+

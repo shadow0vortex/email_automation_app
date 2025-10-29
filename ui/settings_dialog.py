@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QGroupBox, QComboBox
 )
 from PyQt5.QtCore import Qt
-from core.email_sender import EmailValidator
+from core.validators import EmailValidator
 import logging
 
 logger = logging.getLogger(__name__)
