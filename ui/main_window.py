@@ -1,26 +1,24 @@
 import sys
 import os
 import json
-import openpyxl 
+import openpyxl
 import logging
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QTabWidget, QFileDialog, QMessageBox, QAction,
-    QToolBar, QLabel, QProgressBar, QMenu, QPushButton, QVBoxLayout, QWidget,
-    QTableWidgetItem, QTextEdit, QTableWidget, QHeaderView, QInputDialog, QDialog,
-    QStatusBar, QLineEdit
+    QToolBar, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget,
+    QTableWidgetItem, QTextEdit, QTableWidget, QHeaderView, QDialog,
+    QStatusBar, QLineEdit, QHBoxLayout
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer, QDateTime
-from PyQt5.QtGui import QIcon, QKeySequence
+from PyQt5.QtCore import Qt, QDateTime
+from PyQt5.QtGui import QIcon, QKeySequence, QColor
 
-# Core & UI module imports (as in your original)
+# Core & UI module imports
 from core.email_sender import EmailSenderThread
 from core.excel_processor import ExcelProcessor
 from core.template_engine import TemplateEngine
 from core.validators import EmailValidator
 from ui.settings_dialog import SettingsDialog
-from ui.email_editor import PreviewDialog
-from ui.email_editor import EmailEditorWidget
-#from ui.template_library import TemplateLibrary
+from ui.email_editor import PreviewDialog, EmailEditorWidget
 from core.database_manager import DatabaseManager
 
 
@@ -30,9 +28,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Bulk Email Automation System")
         self.db = db_manager if db_manager else DatabaseManager()
         self.setGeometry(100, 100, 1200, 800)
-        
 
-        self.db = DatabaseManager()
         self.excel_processor = ExcelProcessor()
         self.template_engine = TemplateEngine()
         self.email_validator = EmailValidator()
@@ -46,13 +42,13 @@ class MainWindow(QMainWindow):
         self.setup_shortcuts()
         self.load_saved_settings()
 
-    # ------------------------------ UI INITIALIZATION ------------------------------ #
-
+    # ---------------------------------------------------------------------- #
+    #                              UI SETUP                                 #
+    # ---------------------------------------------------------------------- #
     def init_ui(self):
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
-        # Tabs
         self.compose_tab = QWidget()
         self.recipient_tab = QWidget()
         self.log_tab = QWidget()
@@ -70,14 +66,230 @@ class MainWindow(QMainWindow):
         self.init_toolbar()
         self.init_statusbar()
 
+    # ----------------------------- COMPOSE TAB ----------------------------- #
     def init_compose_tab(self):
+        """Initialize compose tab with template selection"""
+        from PyQt5.QtWidgets import (
+            QGroupBox, QRadioButton, QButtonGroup, QFileDialog, QComboBox
+        )
+
         layout = QVBoxLayout()
+        layout.setSpacing(10)
+
+        # ============ TEMPLATE SELECTION GROUP ============
+        template_group = QGroupBox("📧 Email Template")
+        template_layout = QVBoxLayout()
+
+        self.template_button_group = QButtonGroup()
+
+        self.use_editor_radio = QRadioButton("Use Built-in Editor")
+        self.use_editor_radio.setChecked(True)
+        self.use_editor_radio.toggled.connect(self.toggle_template_source)
+        self.template_button_group.addButton(self.use_editor_radio)
+        template_layout.addWidget(self.use_editor_radio)
+
+        self.use_library_radio = QRadioButton("Use Template Library")
+        self.use_library_radio.toggled.connect(self.toggle_template_source)
+        self.template_button_group.addButton(self.use_library_radio)
+        template_layout.addWidget(self.use_library_radio)
+
+        self.use_file_radio = QRadioButton("Upload HTML File")
+        self.use_file_radio.toggled.connect(self.toggle_template_source)
+        self.template_button_group.addButton(self.use_file_radio)
+        template_layout.addWidget(self.use_file_radio)
+
+        # Template library dropdown
+        library_layout = QHBoxLayout()
+        library_layout.addWidget(QLabel("Select Template:"))
+        self.template_library_combo = QComboBox()
+        self.template_library_combo.addItems([
+            "Professional Business",
+            "Simple Clean",
+            "Marketing Campaign",
+            "Newsletter Style"
+        ])
+        self.template_library_combo.currentTextChanged.connect(self.load_library_template)
+        library_layout.addWidget(self.template_library_combo)
+        library_layout.addStretch()
+        template_layout.addLayout(library_layout)
+        self.template_library_combo.hide()
+
+        # Upload HTML button
+        self.upload_template_btn = QPushButton("📁 Browse HTML File")
+        self.upload_template_btn.clicked.connect(self.upload_html_template)
+        self.upload_template_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """)
+        template_layout.addWidget(self.upload_template_btn)
+        self.upload_template_btn.hide()
+
+        template_group.setLayout(template_layout)
+        layout.addWidget(template_group)
+
+        # ============ SUBJECT LINE ============
+        subject_layout = QHBoxLayout()
+        subject_layout.addWidget(QLabel("Subject:"))
         self.subject_input = QLineEdit()
-        self.subject_input.setPlaceholderText("Email Subject")
+        self.subject_input.setPlaceholderText(
+            "Enter email subject (you can use {name}, {company}, etc.)"
+        )
+        subject_layout.addWidget(self.subject_input)
+        layout.addLayout(subject_layout)
+
+        # ============ EMAIL BODY ============
+        body_label = QLabel("Email Body:")
+        body_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(body_label)
+
         self.body_editor = EmailEditorWidget()
-        layout.addWidget(self.subject_input)
         layout.addWidget(self.body_editor)
+
+        # ============ PLACEHOLDER INFO ============
+        placeholder_info = QLabel(
+            "💡 <b>Tip:</b> Use placeholders like {name}, {email}, {company} — "
+            "they will be replaced with actual recipient data."
+        )
+        placeholder_info.setWordWrap(True)
+        placeholder_info.setStyleSheet("""
+            QLabel {
+                background-color: #e7f3ff;
+                border-left: 4px solid #2196F3;
+                padding: 10px;
+                border-radius: 4px;
+                color: #1976D2;
+            }
+        """)
+        layout.addWidget(placeholder_info)
+
+        # ============ ACTION BUTTONS ============
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        clear_btn = QPushButton("🗑️ Clear")
+        clear_btn.clicked.connect(self.clear_compose)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        button_layout.addWidget(clear_btn)
+
+        preview_btn = QPushButton("👁️ Preview")
+        preview_btn.clicked.connect(self.preview_email)
+        preview_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #17a2b8;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #138496;
+            }
+        """)
+        button_layout.addWidget(preview_btn)
+
+        send_btn = QPushButton("📨 Send Emails")
+        send_btn.clicked.connect(self.start_sending)
+        send_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                padding: 8px 30px;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+        """)
+        button_layout.addWidget(send_btn)
+
+        layout.addLayout(button_layout)
         self.compose_tab.setLayout(layout)
+
+    # ----------------------------- TEMPLATE LOGIC ----------------------------- #
+    def toggle_template_source(self):
+        """Switch template source"""
+        if self.use_editor_radio.isChecked():
+            self.template_library_combo.hide()
+            self.upload_template_btn.hide()
+            self.body_editor.setEnabled(True)
+        elif self.use_library_radio.isChecked():
+            self.template_library_combo.show()
+            self.upload_template_btn.hide()
+            self.body_editor.setEnabled(False)
+            self.load_library_template(self.template_library_combo.currentText())
+        elif self.use_file_radio.isChecked():
+            self.template_library_combo.hide()
+            self.upload_template_btn.show()
+            self.body_editor.setEnabled(False)
+
+    def load_library_template(self, template_name):
+        """Load built-in template"""
+        from core.template_engine import TemplateLibrary
+
+        templates = {
+            "Professional Business": TemplateLibrary.get_professional_template(),
+            "Simple Clean": TemplateLibrary.get_simple_template(),
+            "Marketing Campaign": TemplateLibrary.get_marketing_template(),
+            "Newsletter Style": TemplateLibrary.get_professional_template(),
+        }
+
+        template_html = templates.get(template_name, "")
+        if template_html:
+            self.body_editor.set_html(template_html)
+            self.status_label.setText(f"Loaded template: {template_name}")
+
+    def upload_html_template(self):
+        """Upload custom HTML file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select HTML Template", "", "HTML Files (*.html *.htm);;All Files (*.*)"
+        )
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            self.body_editor.set_html(html_content)
+            self.status_label.setText(f"Loaded template: {os.path.basename(file_path)}")
+            QMessageBox.information(
+                self, "Template Loaded",
+                f"Successfully loaded HTML template:\n{os.path.basename(file_path)}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load template:\n{e}")
+
+    def clear_compose(self):
+        """Clear subject and body"""
+        reply = QMessageBox.question(
+            self, "Clear Compose",
+            "Are you sure you want to clear the subject and body?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.subject_input.clear()
+            self.body_editor.clear()
+            self.status_label.setText("Compose form cleared")
+
+
 
     def init_recipient_tab(self):
         layout = QVBoxLayout()
@@ -101,13 +313,169 @@ class MainWindow(QMainWindow):
         self.log_tab.setLayout(layout)
 
     def init_campaign_tab(self):
+        """Initialize campaign history tab"""
+        from PyQt5.QtWidgets import QFrame, QAbstractItemView
+        from PyQt5.QtCore import QTimer
+
         layout = QVBoxLayout()
-        self.campaign_table = QTableWidget()
-        self.campaign_table.setColumnCount(4)
-        self.campaign_table.setHorizontalHeaderLabels(["Campaign Name", "Date", "Emails Sent", "Status"])
-        self.campaign_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        layout.addWidget(self.campaign_table)
+
+        # Stats cards
+        stats_layout = QHBoxLayout()
+        total_campaigns_card = self.create_stat_card("📊 Total Campaigns", "0", "#007bff")
+        stats_layout.addWidget(total_campaigns_card)
+        total_emails_card = self.create_stat_card("📧 Total Emails Sent", "0", "#28a745")
+        stats_layout.addWidget(total_emails_card)
+        success_rate_card = self.create_stat_card("✓ Success Rate", "0%", "#17a2b8")
+        stats_layout.addWidget(success_rate_card)
+        layout.addLayout(stats_layout)
+
+        # Controls
+        controls_layout = QHBoxLayout()
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.load_campaigns)
+        export_btn = QPushButton("📥 Export Campaigns")
+        export_btn.clicked.connect(self.export_campaigns)
+
+        controls_layout.addWidget(refresh_btn)
+        controls_layout.addWidget(export_btn)
+        controls_layout.addStretch()
+
+        search_label = QLabel("Search:")
+        self.campaign_search = QLineEdit()
+        self.campaign_search.setPlaceholderText("Search campaigns...")
+        self.campaign_search.textChanged.connect(self.filter_campaigns)
+        self.campaign_search.setMaximumWidth(250)
+
+        controls_layout.addWidget(search_label)
+        controls_layout.addWidget(self.campaign_search)
+        layout.addLayout(controls_layout)
+
+        # Table
+        self.campaigns_table = QTableWidget()
+        self.campaigns_table.setColumnCount(7)
+        self.campaigns_table.setHorizontalHeaderLabels([
+            "Campaign Name", "Subject", "Total", "Successful",
+            "Failed", "Start Time", "Duration"
+        ])
+        self.campaigns_table.setAlternatingRowColors(True)
+        self.campaigns_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.campaigns_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.campaigns_table.horizontalHeader().setStretchLastSection(True)
+
+        self.campaigns_table.doubleClicked.connect(self.view_campaign_details)
+        layout.addWidget(self.campaigns_table)
+
+        info_label = QLabel("💡 Double-click a campaign to view detailed logs")
+        info_label.setStyleSheet("color:#666; font-style:italic; padding:5px;")
+        layout.addWidget(info_label)
+
         self.campaign_tab.setLayout(layout)
+
+        # Auto-refresh
+        self.campaign_refresh_timer = QTimer()
+        self.campaign_refresh_timer.timeout.connect(self.load_campaigns)
+        self.campaign_refresh_timer.start(30000)
+
+    def create_stat_card(self, title, value, color):
+        from PyQt5.QtWidgets import QFrame
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: white;
+                border-left: 4px solid {color};
+                border-radius: 4px;
+                padding: 15px;
+            }}
+        """)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel(title))
+        value_label = QLabel(value)
+        value_label.setStyleSheet(f"font-size:24px; font-weight:bold; color:{color};")
+        layout.addWidget(value_label)
+        card.setLayout(layout)
+        return card
+
+    def load_campaigns(self):
+        """Load campaigns from DB"""
+        try:
+            campaigns = self.db.get_recent_campaigns(limit=100)
+            self.campaigns_table.setRowCount(0)
+            total_campaigns = len(campaigns)
+            total_emails, total_successful = 0, 0
+
+            for c in campaigns:
+                row = self.campaigns_table.rowCount()
+                self.campaigns_table.insertRow(row)
+                self.campaigns_table.setItem(row, 0, QTableWidgetItem(c['name']))
+                self.campaigns_table.setItem(row, 1, QTableWidgetItem(c.get('subject', 'N/A')))
+                total = c['total_emails']
+                successful = c['successful']
+                total_emails += total
+                total_successful += successful
+                self.campaigns_table.setItem(row, 2, QTableWidgetItem(str(total)))
+                success_item = QTableWidgetItem(str(successful))
+                success_item.setForeground(QColor(40, 167, 69))
+                self.campaigns_table.setItem(row, 3, success_item)
+                failed_item = QTableWidgetItem(str(c['failed']))
+                failed_item.setForeground(QColor(220, 53, 69))
+                self.campaigns_table.setItem(row, 4, failed_item)
+                self.campaigns_table.setItem(row, 5, QTableWidgetItem(str(c.get('start_time', 'N/A'))))
+                self.campaigns_table.setItem(row, 6, QTableWidgetItem("N/A"))
+
+            success_rate = (total_successful / total_emails * 100) if total_emails else 0
+            self.update_stat_cards(total_campaigns, total_emails, success_rate)
+            self.status_label.setText(f"Loaded {total_campaigns} campaigns")
+        except Exception as e:
+            logging.error(f"Error loading campaigns: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load campaigns:\n{e}")
+
+    def update_stat_cards(self, total_campaigns, total_emails, success_rate):
+        """Update statistics display"""
+        logging.info(f"Campaigns: {total_campaigns}, Emails: {total_emails}, Rate: {success_rate}%")
+
+    def filter_campaigns(self, text):
+        """Filter campaigns"""
+        for row in range(self.campaigns_table.rowCount()):
+            visible = any(
+                text.lower() in (self.campaigns_table.item(row, c).text().lower() if self.campaigns_table.item(row, c) else "")
+                for c in range(self.campaigns_table.columnCount())
+            )
+            self.campaigns_table.setRowHidden(row, not visible)
+
+    def view_campaign_details(self):
+        """View campaign logs"""
+        row = self.campaigns_table.currentRow()
+        if row < 0:
+            return
+        campaign_name = self.campaigns_table.item(row, 0).text()
+        self.tabs.setCurrentWidget(self.log_tab)
+        QMessageBox.information(self, "Campaign", f"Viewing logs for: {campaign_name}")
+
+    def export_campaigns(self):
+        """Export campaigns"""
+        from datetime import datetime
+        import csv
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Campaigns",
+            f"campaigns_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            "CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        try:
+            campaigns = self.db.get_recent_campaigns(limit=1000)
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Campaign Name', 'Subject', 'Total', 'Successful', 'Failed', 'Start', 'End'])
+                for c in campaigns:
+                    writer.writerow([c['name'], c.get('subject', ''), c['total_emails'],
+                                     c['successful'], c['failed'], c.get('start_time', ''), c.get('end_time', '')])
+            QMessageBox.information(self, "Export", f"Campaigns exported to {file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", str(e))
 
     def init_toolbar(self):
         toolbar = QToolBar("Main Toolbar")
@@ -162,28 +530,110 @@ class MainWindow(QMainWindow):
         preview.exec_()
 
     def start_sending(self):
+        """Start sending emails"""
         if not self.validate_before_send():
             return
 
-        smtp_config = self.db.get_config_value("smtp_settings")
-        if not smtp_config:
-            QMessageBox.warning(self, "Missing SMTP", "Please configure SMTP settings first.")
+        # Retrieve SMTP settings from database (stored individually)
+        smtp_email = self.db.get_config_value("smtp_email")
+        smtp_password = self.db.get_config_value("smtp_password")
+        smtp_server = self.db.get_config_value("smtp_server")
+        smtp_port = self.db.get_config_value("smtp_port")
+    
+        # Check if SMTP is configured
+        if not smtp_email or not smtp_password or not smtp_server or not smtp_port:
+            QMessageBox.warning(
+                self, 
+                "Missing SMTP Configuration", 
+                "Please configure SMTP settings first.\n\nGo to Settings → SMTP Configuration"
+            )
             return
-
+    
+        # Construct SMTP config dictionary
+        smtp_config = {
+            'email': smtp_email,
+            'password': smtp_password,
+            'server': smtp_server,
+            'port': int(smtp_port)
+        }
+    
+        # Get delay setting
+        delay = float(self.db.get_config_value("default_delay", "2"))
+    
+        # Create campaign in database
+        campaign_name = f"Campaign_{QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss')}"
+        campaign_id = self.db.create_campaign(
+            name=campaign_name,
+            total_emails=len(self.recipients),
+            subject=self.subject_input.text()
+        )
+    
+        if not campaign_id:
+            QMessageBox.critical(self, "Error", "Failed to create campaign in database.")
+            return
+    
+        # Convert recipients list to DataFrame format expected by EmailSenderThread
+        import pandas as pd
+        recipients_df = pd.DataFrame(self.recipients)
+    
+        # Create and start email sender thread
         self.sender_thread = EmailSenderThread(
             smtp_config=smtp_config,
-            recipients=self.recipients,
+            recipients_df=recipients_df,
             subject=self.subject_input.text(),
-            body=self.body_editor.get_html(),
+            body_html=self.body_editor.get_html(),
+            delay=delay,
+            campaign_id=campaign_id,
+            db_manager=self.db
         )
-
-        self.sender_thread.log_signal.connect(self.append_log)
-        self.sender_thread.progress_signal.connect(self.update_progress)
-        self.sender_thread.finished_signal.connect(self.on_send_complete)
+    
+        # Connect signals
+        self.sender_thread.log_signal.connect(self.handle_log_signal)
+        self.sender_thread.progress.connect(self.update_progress)
+        self.sender_thread.status_signal.connect(self.handle_status_signal)
+        self.sender_thread.finished.connect(self.on_send_complete)
+        
+        # Start sending
         self.sender_thread.start()
-
         self.status_label.setText("Sending emails...")
         self.progress_bar.setValue(0)
+        
+        # Switch to logs tab to show progress
+        self.tabs.setCurrentWidget(self.log_tab)
+
+    def handle_log_signal(self, log_data):
+        """Handle log signal from sender thread"""
+        timestamp = QDateTime.currentDateTime().toString("hh:mm:ss")
+        status_icon = "✓" if log_data['status'] == 'Success' else "✗"
+    
+        log_message = f"[{timestamp}] {status_icon} {log_data['email']} - {log_data['status']}"
+        if log_data.get('error'):
+            log_message += f" - {log_data['error']}"
+    
+        self.log_view.append(log_message)
+
+    def handle_status_signal(self, message):
+        """Handle status signal from sender thread"""
+        self.status_label.setText(message)
+
+    def on_send_complete(self, summary):
+        """Handle completion of email sending"""
+        self.status_label.setText(
+            f"Completed: {summary['successful']} sent, {summary['failed']} failed"
+        )
+        self.progress_bar.setValue(100)
+    
+        QMessageBox.information(
+            self,
+            "Send Complete",
+            f"Email sending completed!\n\n"
+            f"Successful: {summary['successful']}\n"
+            f"Failed: {summary['failed']}\n"
+            f"Total Time: {summary['total_time']:.1f} seconds"
+        )
+    
+        # Reload logs and campaigns
+        self.load_saved_settings()
 
     def append_log(self, message):
         timestamp = QDateTime.currentDateTime().toString("hh:mm:ss")
@@ -288,18 +738,45 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Sent {sent}/{total} emails")
 
     def validate_before_send(self):
-        if not self.db.get_config_value("smtp_settings"):
-            QMessageBox.warning(self, "SMTP Missing", "Configure SMTP settings before sending.")
+        """Validate before sending emails"""
+        # Check SMTP configuration
+        smtp_email = self.db.get_config_value("smtp_email")
+        smtp_password = self.db.get_config_value("smtp_password")
+        if not smtp_email or not smtp_password:
+            QMessageBox.warning(
+                self,
+                "SMTP Missing",
+                "Configure SMTP settings before sending.\n\nGo to Settings → SMTP Configuration"
+            )
             return False
+
+        # Check recipients
         if not self.recipients:
-            QMessageBox.warning(self, "No Recipients", "Please import recipient list first.")
+            QMessageBox.warning(
+                self,
+                "No Recipients",
+                "Please import recipient list first.\n\nGo to Recipients tab → Import Recipients"
+            )
             return False
+
+        # Check subject
         if not self.subject_input.text().strip():
-            QMessageBox.warning(self, "Missing Subject", "Please enter an email subject.")
+            QMessageBox.warning(
+                self,
+                "Missing Subject",
+                "Please enter an email subject."
+            )
             return False
+
+        # Check body
         if not self.body_editor.get_html().strip():
-            QMessageBox.warning(self, "Empty Body", "Please compose an email body.")
+            QMessageBox.warning(
+                self,
+                "Empty Body",
+                "Please compose an email body."
+            )
             return False
+
         return True
 
     def show_statistics(self):
